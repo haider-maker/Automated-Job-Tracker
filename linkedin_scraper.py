@@ -3,6 +3,7 @@
 import time
 import json
 import re
+import os
 from db.db_functions import add_applications_batch, job_already_processed
 from datetime import datetime, timedelta
 from tqdm import tqdm
@@ -14,13 +15,25 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import StaleElementReferenceException, ElementClickInterceptedException
 
 # -----------------------------
+# Paths Setup
+# -----------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))      # Automated-Job-Tracker folder
+ROOT_DIR = os.path.dirname(BASE_DIR)                       # Job_Tracker folder
+CREDS_DIR = os.path.join(ROOT_DIR, "creds")               # creds folder
+
+# Load config.json from creds
+CONFIG_PATH = os.path.join(CREDS_DIR, "config.json")
+with open(CONFIG_PATH, "r") as f:
+    config = json.load(f)
+
+LINKEDIN_EMAIL = config.get("LINKEDIN_EMAIL")
+LINKEDIN_PASSWORD = config.get("LINKEDIN_PASSWORD")
+DB_PATH = config.get("DB_PATH", os.path.join(BASE_DIR, "data", "job_tracker.db"))
+
+# -----------------------------
 # Date parsing helper
 # -----------------------------
 def parse_applied_text(text):
-    """
-    Convert text like 'Applied 4d ago' or 'Application viewed 2w ago'
-    into a YYYY-MM-DD formatted date string.
-    """
     now = datetime.now().date()
     if not text:
         return str(now)
@@ -45,16 +58,6 @@ def parse_applied_text(text):
     return str(result_date)
 
 # -----------------------------
-# Load config
-# -----------------------------
-with open("config.json", "r") as f:
-    config = json.load(f)
-
-LINKEDIN_EMAIL = config.get("LINKEDIN_EMAIL")
-LINKEDIN_PASSWORD = config.get("LINKEDIN_PASSWORD")
-DB_PATH = config.get("DB_PATH", "data/job_tracker.db")
-
-# -----------------------------
 # Selenium setup
 # -----------------------------
 options = Options()
@@ -69,7 +72,6 @@ wait = WebDriverWait(driver, 15)
 # Helpers
 # -----------------------------
 def clean_text(text: str) -> str:
-    """Remove unwanted symbols and fix capitalization."""
     if not text:
         return "Unknown"
     text = re.sub(r"[\r\n\t]+", " ", text)
@@ -77,7 +79,6 @@ def clean_text(text: str) -> str:
     return text.strip().title()
 
 def valid_entry(company: str, position: str) -> bool:
-    """Ensure valid, non-empty entries."""
     if len(position) < 2 or "linkedin" in position.lower():
         return False
     if "no jobs" in company.lower():
@@ -94,7 +95,6 @@ def linkedin_login():
     time.sleep(4)
 
 def smooth_scroll():
-    """Scroll gradually to ensure all jobs load."""
     last_height = driver.execute_script("return document.body.scrollHeight")
     while True:
         driver.execute_script("window.scrollBy(0, window.innerHeight/2);")
@@ -119,14 +119,11 @@ def scrape_applied_jobs():
     while True:
         print(f"\n📄 Scraping page {page_num}...")
 
-        # Scroll to load all jobs on current page
         smooth_scroll()
         time.sleep(2)
 
-        # Track jobs loaded
         job_cards = driver.find_elements(By.CSS_SELECTOR, "div[data-chameleon-result-urn]")
 
-        # Process all currently loaded jobs
         for job in job_cards:
             try:
                 urn = job.get_attribute("data-chameleon-result-urn")
@@ -137,6 +134,7 @@ def scrape_applied_jobs():
                 full_text = job.text.strip().split("\n")
                 if len(full_text) < 2:
                     continue
+
                 position = clean_text(full_text[0])
                 company = clean_text(full_text[1])
                 if not valid_entry(company, position):
@@ -170,9 +168,6 @@ def scrape_applied_jobs():
             except Exception:
                 continue
 
-        # -----------------------------
-        # Click Next Button until last page
-        # -----------------------------
         try:
             next_button = driver.find_element(By.CSS_SELECTOR, "button[aria-label='Next']")
             if "disabled" in next_button.get_attribute("class"):
@@ -181,8 +176,6 @@ def scrape_applied_jobs():
             old_urns = [job.get_attribute("data-chameleon-result-urn") for job in job_cards]
             next_button.click()
             print("⏳ Clicking Next to load more jobs...")
-
-            # Wait until at least one new job loads
             WebDriverWait(driver, 15).until(
                 lambda d: any(
                     el.get_attribute("data-chameleon-result-urn") not in old_urns
@@ -195,9 +188,6 @@ def scrape_applied_jobs():
             print("🟡 Next button not found or no more pages.")
             break
 
-    # -----------------------------
-    # Batch Insert
-    # -----------------------------
     if all_jobs:
         add_applications_batch(all_jobs)
         print(f"✅ Added {len(all_jobs)} new job applications to DB.")
