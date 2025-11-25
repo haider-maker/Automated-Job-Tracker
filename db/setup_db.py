@@ -1,42 +1,38 @@
 # db/setup_db.py
-"""
-This script creates the SQLite database and applications table.
-Run this once before using main.py
-"""
 
 import sqlite3
-import os
+from pathlib import Path
 
-# Ensure the data folder exists
-os.makedirs("data", exist_ok=True)
+BASE_DIR = Path(__file__).resolve().parent.parent   # Automated-Job-Tracker
+DATA_DIR = BASE_DIR / "data"
+DB_PATH = DATA_DIR / "job_tracker.db"
 
-# Path to the database file
-DB_PATH = "data/job_tracker.db"
 
 def create_db():
-    # Connect to the database (creates file if it doesn't exist)
+    DATA_DIR.mkdir(exist_ok=True)
+
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    
-    # Create the applications table if it doesn't exist
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS applications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email_id TEXT UNIQUE,
-    date_applied TEXT,
-    platform TEXT,
-    company TEXT,
-    position TEXT,
-    job_url TEXT,
-    application_status TEXT,
-    response_date TEXT,
-    notes TEXT
-)
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email_id TEXT,
+            date_applied TEXT,
+            platform TEXT,
+            company TEXT,
+            position TEXT,
+            job_url TEXT UNIQUE,
+            application_status TEXT,
+            response_date TEXT,
+            notes TEXT
+        )
     """)
-    
+
     conn.commit()
     conn.close()
-    print(f"✅ Database created at {DB_PATH}")
+    print(f"✅ Database created at: {DB_PATH}")
+
 
 if __name__ == "__main__":
     create_db()

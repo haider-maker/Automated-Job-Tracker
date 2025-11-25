@@ -2,38 +2,43 @@
 
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 
-DB_PATH = "data/job_tracker.db"
+# -----------------------------------------------------
+# Correct DB path (matches entire project)
+# -----------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent.parent    # Automated-Job-Tracker
+DATA_DIR = BASE_DIR / "data"
+DB_PATH = DATA_DIR / "job_tracker.db"
 
-# -----------------------------
-# Create table if it doesn't exist
-# -----------------------------
+
+# -----------------------------------------------------
+# Initialize DB + table
+# -----------------------------------------------------
 def init_db(db_path=DB_PATH):
-    """
-    Initialize the applications table with necessary columns:
-    - application_status: default 'Applied'
-    """
+    DATA_DIR.mkdir(exist_ok=True)
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS applications (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        job_url TEXT UNIQUE,
-        date_applied TEXT,
-        platform TEXT,
-        company TEXT,
-        position TEXT,
-        application_status TEXT DEFAULT 'Applied',
-        notes TEXT
-    )
+        CREATE TABLE IF NOT EXISTS applications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_url TEXT UNIQUE,
+            date_applied TEXT,
+            platform TEXT,
+            company TEXT,
+            position TEXT,
+            application_status TEXT DEFAULT 'Applied',
+            notes TEXT,
+            email_id TEXT
+        )
     """)
     conn.commit()
     conn.close()
 
 
-# -----------------------------
-# Insert a single application
-# -----------------------------
+# -----------------------------------------------------
+# Insert a single record
+# -----------------------------------------------------
 def add_application(
     date_applied,
     platform,
@@ -44,9 +49,6 @@ def add_application(
     application_status="Applied",
     db_path=DB_PATH
 ):
-    """
-    Insert a single job application into the DB.
-    """
     init_db(db_path)
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
@@ -67,50 +69,38 @@ def add_application(
     conn.close()
 
 
-# -----------------------------
-# Check if a job already exists
-# -----------------------------
+# -----------------------------------------------------
+# Check if job URL already exists
+# -----------------------------------------------------
 def job_already_processed(job_url, db_path=DB_PATH):
-    """
-    Returns True if job_url already exists in the DB.
-    """
     if not job_url:
         return False
     init_db(db_path)
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM applications WHERE job_url = ?", (job_url,))
-    result = cur.fetchone()
+    exists = cur.fetchone() is not None
     conn.close()
-    return result is not None
+    return exists
 
 
-# -----------------------------
-# Batch insert applications
-# -----------------------------
+# -----------------------------------------------------
+# Batch Insert
+# -----------------------------------------------------
 def add_applications_batch(applications, db_path=DB_PATH):
-    """
-    Batch insert a list of applications.
-    Each application should be a dict with:
-    - date_applied
-    - platform
-    - company
-    - position
-    - job_url
-    - application_status (default 'Applied')
-    - notes
-    """
     if not applications:
         print("⚠️ No new applications to insert.")
         return
 
+    init_db(db_path)
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    cur = conn.cursor()
 
     to_insert = []
+
     for app in applications:
-        cursor.execute("SELECT 1 FROM applications WHERE job_url = ?", (app["job_url"],))
-        if cursor.fetchone() is None:
+        cur.execute("SELECT 1 FROM applications WHERE job_url = ?", (app["job_url"],))
+        if cur.fetchone() is None:
             to_insert.append((
                 app.get("date_applied"),
                 app.get("platform"),
@@ -122,14 +112,14 @@ def add_applications_batch(applications, db_path=DB_PATH):
             ))
 
     if to_insert:
-        cursor.executemany("""
+        cur.executemany("""
             INSERT INTO applications 
             (date_applied, platform, company, position, job_url, application_status, notes)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, to_insert)
         conn.commit()
-        print(f"✅ Batch inserted {len(to_insert)} new applications.")
+        print(f"✅ Batch inserted {len(to_insert)} applications.")
     else:
-        print("ℹ️ No new unique applications found.")
+        print("ℹ️ No unique applications found.")
 
     conn.close()

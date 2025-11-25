@@ -2,20 +2,33 @@ import sqlite3
 import pandas as pd
 from tabulate import tabulate
 from pathlib import Path
+import json
+import os
 
-# Define DB path (same as in db_functions.py)
-DB_PATH = Path("data/job_tracker.db")
+# --------------------------------------------------
+# Load config.json for consistent DB path
+# --------------------------------------------------
+ROOT_DIR = Path(__file__).resolve().parents[1]     # /Job_Tracker
+CREDS_DIR = ROOT_DIR / "creds"
+CONFIG_PATH = CREDS_DIR / "config.json"
 
-def view_applications(limit=500, show_incomplete=True):
-    """View job applications stored in the database in a clean table format."""
+with open(CONFIG_PATH, "r") as f:
+    config = json.load(f)
+
+DB_PATH = Path(config["DB_PATH"])   # absolute or relative stored in config
+print(f"Using DB: {DB_PATH}")
+
+# --------------------------------------------------
+# View Applications
+# --------------------------------------------------
+def view_applications(limit=5, show_incomplete=True):
     if not DB_PATH.exists():
-        print(f"⚠️ Database not found at {DB_PATH}. Please run the tracker or API first.")
+        print(f"⚠️ Database not found at {DB_PATH}.")
         return
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # Get table columns dynamically
     cursor.execute("PRAGMA table_info(applications);")
     columns = [col[1] for col in cursor.fetchall()]
 
@@ -28,7 +41,7 @@ def view_applications(limit=500, show_incomplete=True):
     ]
 
     if not wanted_cols:
-        print("⚠️ No recognizable columns found in 'applications' table.")
+        print("⚠️ No recognizable columns found in applications table.")
         conn.close()
         return
 
@@ -43,27 +56,25 @@ def view_applications(limit=500, show_incomplete=True):
     conn.close()
 
     if df.empty:
-        print("⚠️ No job applications found in the database.")
+        print("⚠️ No job applications found.")
         return
 
-    # Clean long URLs
     if "job_url" in df.columns:
         df["job_url"] = df["job_url"].apply(
             lambda u: u[:60] + "..." if isinstance(u, str) and len(u) > 60 else u
         )
 
-    # Filter incomplete entries if requested
     if not show_incomplete:
         df = df[df["company"].str.strip() != ""]
         df = df[df["position"].str.strip() != ""]
 
-    # Replace blanks with “—”
     df = df.fillna("—")
     df.replace("", "—", inplace=True)
 
     print(f"📊 Showing {len(df)} recent applications (limit={limit})\n")
     print(tabulate(df, headers="keys", tablefmt="fancy_grid", showindex=False))
 
+
 if __name__ == "__main__":
-    print("📊 Viewing job applications from database...\n")
-    view_applications(limit=1000, show_incomplete=True)
+    print("📊 Viewing job applications...\n")
+    view_applications(limit=5, show_incomplete=True)
